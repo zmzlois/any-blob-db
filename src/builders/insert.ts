@@ -4,10 +4,9 @@ import type {
   InferColType,
   InferRow,
   InsertRow,
-  TableDef,
   TableSchema,
-  WithTableFn,
 } from "../types"
+import { WriteBuilder } from "./base"
 
 function applyDefaults<S extends TableSchema>(
   schema: S,
@@ -33,18 +32,12 @@ interface ConflictClause<S extends TableSchema> {
   set: Partial<InferRow<S>>
 }
 
-export class InsertBuilder<S extends TableSchema, TReturn = void> {
+export class InsertBuilder<
+  S extends TableSchema,
+  TReturn = void,
+> extends WriteBuilder<S, TReturn> {
   private _rows: InsertRow<S>[] = []
-  private _shouldReturn = false
   private _conflict?: ConflictClause<S>
-  private readonly _withTable: WithTableFn
-
-  constructor(
-    private readonly table: TableDef<S>,
-    withTable: WithTableFn,
-  ) {
-    this._withTable = withTable
-  }
 
   values(rows: InsertRow<S> | InsertRow<S>[]): this {
     this._rows = Array.isArray(rows) ? rows : [rows]
@@ -59,23 +52,7 @@ export class InsertBuilder<S extends TableSchema, TReturn = void> {
     return this
   }
 
-  returning(): InsertBuilder<S, InferRow<S>[]> {
-    this._shouldReturn = true
-    return this as unknown as InsertBuilder<S, InferRow<S>[]>
-  }
-
-  // biome-ignore lint/suspicious/noThenProperty: intentional thenable — enables `await builder` syntax
-  then<TResult1 = TReturn, TResult2 = never>(
-    resolve?: ((value: TReturn) => TResult1 | PromiseLike<TResult1>) | null,
-    reject?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
-  ): Promise<TResult1 | TResult2> {
-    // biome-ignore lint/suspicious/noExplicitAny: thenable pattern requires cast to pass typed resolve/reject
-    return this._execute().then(resolve as any, reject) as Promise<
-      TResult1 | TResult2
-    >
-  }
-
-  private async _execute(): Promise<TReturn> {
+  protected async _execute(): Promise<TReturn> {
     const toInsert = this._rows.map((row) =>
       applyDefaults(this.table._schema, row as unknown as Partial<InferRow<S>>),
     )
