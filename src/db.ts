@@ -41,7 +41,7 @@ export function createDb(config: DbConfig) {
       }
     },
 
-    async wipe(...tables: TableDef<TableSchema>[]): Promise<void> {
+    async wipe(...tables: Array<{ _name: string }>): Promise<void> {
       await Promise.all(tables.map((t) => defaultWithTable(t._name, () => [])))
     },
   }
