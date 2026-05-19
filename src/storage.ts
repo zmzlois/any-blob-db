@@ -1,23 +1,8 @@
-import { list } from "@vercel/blob"
+import { BlobPreconditionFailedError, get, put } from "@vercel/blob"
 import type { DbConfig } from "./types"
-
-// update this when @vercel/blob bumps its internal api version
-const BLOB_API_VERSION = "9"
-const BLOB_API_BASE = "https://blob.vercel-storage.com"
 
 function getPathname(tableName: string, config: DbConfig): string {
   return `${config.prefix ?? "blob-db"}/${tableName}.json`
-}
-
-function apiHeaders(
-  token: string,
-  extra: Record<string, string> = {},
-): Record<string, string> {
-  return {
-    authorization: `Bearer ${token}`,
-    "x-api-version": BLOB_API_VERSION,
-    ...extra,
-  }
 }
 
 interface ReadResult<T> {
@@ -30,20 +15,22 @@ export async function readTable<T>(
   config: DbConfig,
 ): Promise<ReadResult<T>> {
   const pathname = getPathname(tableName, config)
-  const { blobs } = await list({
-    prefix: pathname,
+
+  // useCache: false fetches directly from origin, bypassing the vercel blob cdn.
+  // required for read-modify-write correctness — cdn caches have a minimum ttl of ~60s
+  // and would return stale etags, causing spurious 412s on the next conditional write.
+  const result = await get(pathname, {
     token: config.token,
-    limit: 1,
+    access: config.access ?? "public",
+    useCache: false,
   })
-  const blob = blobs.find((b) => b.pathname === pathname)
-  if (!blob) return { data: [], etag: null }
 
-  // the sdk strips etag from list results — fetch the url directly to capture it from response headers
-  const fetchUrl = config.access === "private" ? blob.downloadUrl : blob.url
-  const res = await fetch(fetchUrl, { cache: "no-store" })
-  if (!res.ok) return { data: [], etag: null }
+  if (!result || !result.stream) return { data: [], etag: null }
 
-  return { data: (await res.json()) as T[], etag: res.headers.get("etag") }
+  const data = (await new Response(
+    result.stream as ReadableStream,
+  ).json()) as T[]
+  return { data, etag: result.blob.etag || null }
 }
 
 export async function writeTable<T>(
@@ -53,40 +40,31 @@ export async function writeTable<T>(
   config: DbConfig,
 ): Promise<void> {
   const pathname = getPathname(tableName, config)
-  const res = await fetch(
-    `${BLOB_API_BASE}/?${new URLSearchParams({ pathname })}`,
-    {
-      method: "PUT",
-      body: JSON.stringify(data),
-      headers: apiHeaders(config.token, {
-        "content-type": "application/octet-stream",
-        "x-content-type": "application/json",
-        "x-add-random-suffix": "0",
-        "x-cache-control-max-age": "0",
-        // private stores reject this header — only send it for public stores
-        ...((config.access ?? "public") === "public"
-          ? { "x-access": "public" }
-          : {}),
-        ...(etag ? { "if-match": etag } : {}),
-      }),
-    },
-  )
-
-  if (res.status === 412) {
-    const err = new Error(
-      "blob-db: write conflict — another write occurred concurrently",
-    ) as Error & { status: number }
-    err.status = 412
-    throw err
-  }
-
-  if (!res.ok) {
-    throw new Error(
-      `blob-db: write failed (${res.status}) — ${await res.text().catch(() => res.statusText)}`,
-    )
+  try {
+    await put(pathname, JSON.stringify(data), {
+      access: config.access ?? "public",
+      token: config.token,
+      contentType: "application/json",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 0,
+      // conditional write: only succeed if nobody else wrote since we read
+      ...(etag ? { ifMatch: etag } : {}),
+    })
+  } catch (e: unknown) {
+    if (e instanceof BlobPreconditionFailedError) {
+      const err = new Error(
+        "blob-db: write conflict — another write occurred concurrently",
+      ) as Error & { status: number }
+      err.status = 412
+      throw err
+    }
+    throw e
   }
 }
 
+// read-modify-write with optimistic locking via etag + x-if-match.
+// retries up to maxRetries times when a concurrent write is detected (412).
 export async function withTable<T>(
   tableName: string,
   config: DbConfig,
