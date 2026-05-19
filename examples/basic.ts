@@ -6,7 +6,7 @@ if (!token) {
   process.exit(1)
 }
 
-// ── schema ────────────────────────────────────────────────────────────────────
+// schema — .references() declares a FK and enables auto-join inference
 
 const users = defineTable("users", {
   id:     col.text("id").primaryKey().default(() => crypto.randomUUID()),
@@ -17,36 +17,39 @@ const users = defineTable("users", {
 })
 
 const posts = defineTable("posts", {
-  id:       col.text("id").primaryKey().default(() => crypto.randomUUID()),
-  authorId: col.text("authorId"),
-  title:    col.text("title"),
+  id:        col.text("id").primaryKey().default(() => crypto.randomUUID()),
+  authorId:  col.text("authorId").references(() => users.id),
+  title:     col.text("title"),
   published: col.boolean("published").default(false),
 })
 
-const db = createDb({ token, prefix: "blob-db-test" })
+const comments = defineTable("comments", {
+  id:      col.text("id").primaryKey().default(() => crypto.randomUUID()),
+  postId:  col.text("postId").references(() => posts.id),
+  content: col.text("content"),
+})
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+const db = createDb({ token, prefix: "blob-db-test" })
 
 const pass = (msg: string) => console.log("  ✓", msg)
 const fail = (msg: string) => { console.error("  ✗", msg); process.exitCode = 1 }
 const assert = (ok: boolean, msg: string) => ok ? pass(msg) : fail(msg)
 
-// ── tests ─────────────────────────────────────────────────────────────────────
+const wipe = () => db.wipe(users, posts, comments)
 
 async function testCrud() {
-  console.log("\n── crud ──────────────────────────────────────────────────────")
-
-  for (const u of await db.select().from(users)) await db.delete(users).where(eq(users.id, u.id))
+  console.log("\ncrud")
+  await wipe()
 
   await db.insert(users).values({ id: "1", name: "Alice", email: "alice@test.com", age: 30 })
-  pass("insert without returning")
+  pass("insert")
 
   const [bob] = await db.insert(users)
     .values({ name: "Bob", email: "bob@test.com", age: 25 })
     .returning()
-  assert(bob.name === "Bob",                            "insert returning — name correct")
-  assert(typeof bob.id === "string" && bob.id.length > 0, "insert returning — default uuid applied")
-  assert(bob.active === true,                           "insert returning — default boolean applied")
+  assert(bob.name === "Bob",                               "insert returning — name")
+  assert(typeof bob.id === "string" && bob.id.length > 0, "insert returning — uuid default")
+  assert(bob.active === true,                              "insert returning — boolean default")
 
   const batch = await db.insert(users)
     .values([
@@ -54,147 +57,131 @@ async function testCrud() {
       { name: "Dave",  email: "dave@test.com",  age: 20 },
     ])
     .returning()
-  assert(batch.length === 2, "batch insert — 2 rows")
+  assert(batch.length === 2, "batch insert")
 
-  const all = await db.select().from(users)
-  assert(all.length === 4, `select all — 4 rows (got ${all.length})`)
+  assert((await db.select().from(users)).length === 4, "select all")
 
   const alices = await db.select().from(users).where(eq(users.name, "Alice"))
   assert(alices.length === 1 && alices[0].email === "alice@test.com", "select where eq")
 
   const young = await db.select().from(users).where(and(gt(users.age, 20), eq(users.active, true)))
-  assert(young.length === 3, `select compound where — 3 rows (got ${young.length})`)
+  assert(young.length === 3, `select compound where (got ${young.length})`)
 
   await db.update(users).set({ age: 31 }).where(eq(users.name, "Alice"))
-  pass("update without returning")
+  pass("update")
 
   const updated = await db.update(users).set({ active: false }).where(eq(users.name, "Dave")).returning()
   assert(updated.length === 1 && updated[0].active === false, "update returning")
-
-  const dave = await db.select().from(users).where(eq(users.name, "Dave"))
-  assert(dave[0].active === false, "update persisted")
+  assert((await db.select().from(users).where(eq(users.name, "Dave")))[0].active === false, "update persisted")
 
   await db.delete(users).where(eq(users.name, "Carol"))
-  assert((await db.select().from(users)).length === 3, "delete — 3 rows remain")
+  assert((await db.select().from(users)).length === 3, "delete")
 
   const deleted = await db.delete(users).where(eq(users.name, "Dave")).returning()
   assert(deleted.length === 1 && deleted[0].name === "Dave", "delete returning")
 }
 
 async function testUpsert() {
-  console.log("\n── upsert ────────────────────────────────────────────────────")
+  console.log("\nupsert")
+  await wipe()
 
-  for (const u of await db.select().from(users)) await db.delete(users).where(eq(users.id, u.id))
-
-  // first insert — no conflict
   const [u1] = await db.insert(users)
     .values({ id: "upsert-1", name: "Alice", email: "a@test.com", age: 30 })
     .returning()
-  assert(u1.name === "Alice", "upsert: first insert")
+  assert(u1.name === "Alice", "initial insert")
 
-  // second insert same id — should update, not duplicate
   const [u2] = await db.insert(users)
     .values({ id: "upsert-1", name: "Alice Updated", email: "a@test.com", age: 31 })
     .onConflict(users.id, { set: { name: "Alice Updated", age: 31 } })
     .returning()
-  assert(u2.name === "Alice Updated", "upsert: conflict updates name")
-  assert(u2.age === 31,              "upsert: conflict updates age")
-
-  const all = await db.select().from(users)
-  assert(all.length === 1, "upsert: no duplicate rows created")
+  assert(u2.name === "Alice Updated", "conflict updated name")
+  assert(u2.age === 31,              "conflict updated age")
+  assert((await db.select().from(users)).length === 1, "no duplicate rows")
 }
 
 async function testJoins() {
-  console.log("\n── joins ─────────────────────────────────────────────────────")
-
-  // seed users
-  for (const u of await db.select().from(users)) await db.delete(users).where(eq(users.id, u.id))
-  for (const p of await db.select().from(posts)) await db.delete(posts).where(eq(posts.id, p.id))
+  console.log("\njoins")
+  await wipe()
 
   const [alice] = await db.insert(users).values({ id: "j-alice", name: "Alice", email: "a@t.com", age: 30 }).returning()
   const [bob]   = await db.insert(users).values({ id: "j-bob",   name: "Bob",   email: "b@t.com", age: 25 }).returning()
 
-  // alice has 2 posts, bob has 1 post, no author has 1 orphan post
   await db.insert(posts).values([
-    { id: "p1", authorId: alice.id, title: "Alice Post 1", published: true },
+    { id: "p1", authorId: alice.id, title: "Alice Post 1", published: true  },
     { id: "p2", authorId: alice.id, title: "Alice Post 2", published: false },
-    { id: "p3", authorId: bob.id,   title: "Bob Post 1",   published: true },
-    { id: "p4", authorId: "ghost",  title: "Orphan Post",  published: true },
+    { id: "p3", authorId: bob.id,   title: "Bob Post 1",   published: true  },
+    { id: "p4", authorId: "ghost",  title: "Orphan Post",  published: true  },
   ])
 
-  // inner join — only posts with a matching user (drops the orphan)
-  const inner = await db.select()
-    .from(posts)
-    .innerJoin(users, eq(posts.authorId, users.id))
-  assert(inner.length === 3, `innerJoin — 3 rows (got ${inner.length})`)
-  assert(inner.every(r => r.name !== undefined), "innerJoin — user fields present")
+  await db.insert(comments).values([
+    { postId: "p1", content: "great post!" },
+    { postId: "p1", content: "agreed!"     },
+    { postId: "p3", content: "nice one"    },
+  ])
 
-  // left join — all posts kept, orphan has undefined user fields
-  const left = await db.select()
-    .from(posts)
-    .leftJoin(users, eq(posts.authorId, users.id))
-  assert(left.length === 4, `leftJoin — 4 rows (got ${left.length})`)
+  // explicit ON
+  const explicit = await db.select().from(posts).innerJoin(users, eq(posts.authorId, users.id))
+  assert(explicit.length === 3, `explicit innerJoin (got ${explicit.length})`)
 
-  const orphan = left.find(r => r.title === "Orphan Post")!
-  assert(orphan.name === undefined, "leftJoin — orphan row has undefined user fields")
+  // inferred from posts.authorId.references(() => users.id)
+  const autoInner = await db.select().from(posts).innerJoin(users)
+  assert(autoInner.length === 3, `auto innerJoin FK inferred (got ${autoInner.length})`)
+  assert(autoInner.every(r => r.name !== undefined), "auto innerJoin — user fields present")
 
-  // join + where
-  const alicePosts = await db.select()
-    .from(posts)
-    .innerJoin(users, eq(posts.authorId, users.id))
-    .where(eq(users.name, "Alice"))
-  assert(alicePosts.length === 2, `join + where — 2 alice posts (got ${alicePosts.length})`)
+  const autoLeft = await db.select().from(posts).leftJoin(users)
+  assert(autoLeft.length === 4, `auto leftJoin (got ${autoLeft.length})`)
+  assert(autoLeft.find(r => r.title === "Orphan Post")!.name === undefined, "leftJoin — orphan undefined")
 
-  // join + where on joined field
-  const publishedAlice = await db.select()
-    .from(posts)
-    .innerJoin(users, eq(posts.authorId, users.id))
+  const alicePosts = await db.select().from(posts).innerJoin(users).where(eq(users.name, "Alice"))
+  assert(alicePosts.length === 2, `join + where (got ${alicePosts.length})`)
+
+  const published = await db.select().from(posts).innerJoin(users)
     .where(and(eq(users.name, "Alice"), eq(posts.published, true)))
-  assert(publishedAlice.length === 1, `join + compound where — 1 published alice post (got ${publishedAlice.length})`)
+  assert(published.length === 1, `join + compound where (got ${published.length})`)
+
+  // 3-table: comments.postId → posts.id, posts.authorId → users.id
+  const threeway = await db.select().from(comments).innerJoin(posts).innerJoin(users)
+  assert(threeway.length === 3, `3-table join (got ${threeway.length})`)
+  assert(threeway.every(r => r.content && r.title && r.name), "3-table — all fields present")
+
+  const aliceComments = await db.select().from(comments).innerJoin(posts).innerJoin(users)
+    .where(eq(users.name, "Alice"))
+  assert(aliceComments.length === 2, `3-table + where (got ${aliceComments.length})`)
 }
 
 async function testTransaction() {
-  console.log("\n── transaction ───────────────────────────────────────────────")
+  console.log("\ntransaction")
+  await wipe()
 
-  for (const u of await db.select().from(users)) await db.delete(users).where(eq(users.id, u.id))
-  for (const p of await db.select().from(posts)) await db.delete(posts).where(eq(posts.id, p.id))
-
-  // happy path — both writes commit
-  await db.transaction(async (tx) => {
-    await tx.insert(users).values({ id: "tx-1", name: "Tx Alice", email: "tx@test.com", age: 30 })
-    await tx.insert(posts).values({ id: "tx-p1", authorId: "tx-1", title: "Tx Post" })
+  const txResult = await db.transaction(async (tx) => {
+    const [user] = await tx.insert(users)
+      .values({ id: "tx-1", name: "Tx Alice", email: "tx@test.com", age: 30 })
+      .returning()
+    await tx.insert(posts).values({ authorId: user.id, title: "Tx Post" })
+    return user.id
   })
-  assert((await db.select().from(users)).length === 1, "tx happy path — user committed")
-  assert((await db.select().from(posts)).length === 1, "tx happy path — post committed")
+  assert(typeof txResult === "string",                     "return value propagates")
+  assert((await db.select().from(users)).length === 1,     "happy path — user committed")
+  assert((await db.select().from(posts)).length === 1,     "happy path — post committed")
 
-  // rollback — error mid-tx undoes all mutations
   try {
     await db.transaction(async (tx) => {
       await tx.insert(users).values({ id: "tx-2", name: "Should Rollback", email: "r@test.com", age: 99 })
+      await tx.update(users).set({ name: "Also Rolled Back" }).where(eq(users.id, "tx-1"))
       throw new Error("intentional failure")
     })
-  } catch {
-    // expected
-  }
-  const usersAfterRollback = await db.select().from(users)
-  assert(usersAfterRollback.length === 1,           "tx rollback — user count restored")
-  assert(!usersAfterRollback.some(u => u.id === "tx-2"), "tx rollback — rolled-back user gone")
+  } catch { /* expected */ }
 
-  // return value propagates from the fn
-  const result = await db.transaction(async (tx) => {
-    const [u] = await tx.insert(users)
-      .values({ name: "Tx Bob", email: "txb@test.com", age: 20 })
-      .returning()
-    return u.id
-  })
-  assert(typeof result === "string" && result.length > 0, "tx return value propagates")
+  const after = await db.select().from(users)
+  assert(after.length === 1,                               "rollback — count restored")
+  assert(!after.some(u => u.id === "tx-2"),                "rollback — insert undone")
+  assert(after[0].name === "Tx Alice",                     "rollback — update undone")
 }
 
 async function testIfMatch() {
-  console.log("\n── if-match / optimistic locking ────────────────────────────")
-  console.log("  (two concurrent writes — one should see a 412 if Vercel honors If-Match)\n")
+  console.log("\nif-match (two concurrent writes — one should 412 if Vercel honors it)")
+  await wipe()
 
-  for (const u of await db.select().from(users)) await db.delete(users).where(eq(users.id, u.id))
   await db.insert(users).values({ name: "Concurrent", email: "c@test.com", age: 1 })
 
   let conflictDetected = false
@@ -215,21 +202,11 @@ async function testIfMatch() {
     }
   }
 
-  if (!conflictDetected) {
-    console.log("  ⚠  no 412 — Vercel does not enforce If-Match (last-write-wins active)")
-  }
+  if (!conflictDetected) console.log("  ⚠  no 412 — Vercel ignores If-Match (last-write-wins active)")
 
   const final = await db.select().from(users).where(eq(users.name, "Concurrent"))
-  assert(final.length === 1, "concurrent writes — row still exists")
-  assert([2, 3].includes(final[0].age as number), `concurrent writes — age is ${final[0].age}`)
-}
-
-async function cleanup() {
-  console.log("\n── cleanup ───────────────────────────────────────────────────")
-  for (const u of await db.select().from(users)) await db.delete(users).where(eq(users.id, u.id))
-  for (const p of await db.select().from(posts)) await db.delete(posts).where(eq(posts.id, p.id))
-  assert((await db.select().from(users)).length === 0, "users empty")
-  assert((await db.select().from(posts)).length === 0, "posts empty")
+  assert(final.length === 1,                           "row still exists")
+  assert([2, 3].includes(final[0].age as number), `age is ${final[0].age}`)
 }
 
 async function main() {
@@ -239,7 +216,7 @@ async function main() {
     await testJoins()
     await testTransaction()
     await testIfMatch()
-    await cleanup()
+    await wipe()
     console.log("\ndone.\n")
   } catch (e) {
     console.error("\nunhandled error:", e)

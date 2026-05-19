@@ -1,10 +1,12 @@
-import { ColumnDef, TableDef, TableSchema } from "./types"
+import { ColumnDef, type TableDef, type TableSchema } from "./types"
 
-export function defineTable<S extends TableSchema>(name: string, schema: S): TableDef<S> {
+export function defineTable<S extends TableSchema>(
+  name: string,
+  schema: S,
+): TableDef<S> {
   return { _name: name, _schema: schema, ...schema }
 }
 
-// column builders — mirrors drizzle's col.text(), col.integer(), etc.
 export const col = {
   text: (name: string) => new ColumnDef(name, "text" as const),
   integer: (name: string) => new ColumnDef(name, "integer" as const),

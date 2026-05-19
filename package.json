@@ -19,14 +19,18 @@
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
     "typecheck": "tsc --noEmit",
-    "example": "tsx examples/basic.ts"
+    "example": "tsx examples/basic.ts",
+    "lint": "biome lint src",
+    "format": "biome format --write src",
+    "check": "biome check src"
   },
   "peerDependencies": {
     "@vercel/blob": ">=0.20.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
     "@types/node": "^25.9.0",
-    "@vercel/blob": "^0.27.0",
+    "@vercel/blob": "^2.4.0",
     "tsup": "^8.0.0",
     "tsx": "^4.22.2",
     "typescript": "^5.0.0"
