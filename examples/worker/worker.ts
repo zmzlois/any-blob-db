@@ -1,7 +1,7 @@
 // cloudflare worker using the zero-dependency r2 binding adapter.
 // the bucket binding comes straight from wrangler.jsonc — no tokens, no signing.
 //
-// this is a pnpm workspace package that depends on vercel-blob-db via
+// this is a pnpm workspace package that depends on anyblob via
 // workspace:*, so build the library once from the repo root first:
 //
 //   pnpm install && pnpm build

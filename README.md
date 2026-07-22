@@ -1,7 +1,7 @@
-# any-blob-db
+# AnyBlob
 
-[![npm version](https://img.shields.io/npm/v/vercel-blob-db)](https://www.npmjs.com/package/vercel-blob-db)
-[![npm downloads](https://img.shields.io/npm/dm/vercel-blob-db)](https://www.npmjs.com/package/vercel-blob-db)
+[![npm version](https://img.shields.io/npm/v/anyblob)](https://www.npmjs.com/package/anyblob)
+[![npm downloads](https://img.shields.io/npm/dm/anyblob)](https://www.npmjs.com/package/anyblob)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-blue)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![peer: @vercel/blob](https://img.shields.io/badge/peer-%40vercel%2Fblob%20v2%2B-black)](https://vercel.com/docs/storage/vercel-blob)
@@ -17,9 +17,9 @@ This package turn any storage into a database.
 ## install
 
 ```bash
-npm install any-blob-db @vercel/blob   # vercel blob (default adapter)
-npm install any-blob-db                # cloudflare r2 via workers binding — no extra deps
-npm install any-blob-db aws4fetch      # cloudflare r2 / s3 over http from anywhere
+npm install anyblob @vercel/blob   # vercel blob (default adapter)
+npm install anyblob              # cloudflare r2 via workers binding — no extra deps
+npm install anyblob aws4fetch      # cloudflare r2 / s3 over http from anywhere
 ```
 
 Only the peer dependency for the adapter you use needs to be installed — the others are never loaded.
@@ -27,7 +27,7 @@ Only the peer dependency for the adapter you use needs to be installed — the o
 ## setup
 
 ```ts
-import { createDb } from "vercel-blob-db"
+import { createDb } from "anyblob"
 
 const db = createDb({
   token: process.env.BLOB_READ_WRITE_TOKEN!, // from your Vercel project
@@ -78,7 +78,7 @@ For AWS S3, MinIO, or any other S3-compatible store, pass `endpoint` (and option
 Implement the two-method `StorageAdapter` interface for anything else:
 
 ```ts
-import type { StorageAdapter } from "vercel-blob-db"
+import type { StorageAdapter } from "anyblob"
 
 const myStorage: StorageAdapter = {
   async read(pathname) { /* return { text, etag } */ },
@@ -93,7 +93,7 @@ const db = createDb({ adapter: "custom", storage: myStorage })
 ## define your schema
 
 ```ts
-import { defineTable, col } from "vercel-blob-db"
+import { defineTable, col } from "anyblob"
 
 const users = defineTable("users", {
   id:     col.text("id").primaryKey().default(() => crypto.randomUUID()),
@@ -140,7 +140,7 @@ await db.insert(users).values([
 ### select
 
 ```ts
-import { eq, and, gt } from "vercel-blob-db"
+import { eq, and, gt } from "anyblob"
 
 // all rows
 const all = await db.select().from(users)
@@ -264,7 +264,7 @@ await db.wipe(users, posts, comments)
 ## type inference
 
 ```ts
-import type { InferRow, InsertRow } from "vercel-blob-db"
+import type { InferRow, InsertRow } from "anyblob"
 
 type User = InferRow<typeof users._schema>
 // { id: string; name: string; email: string; age: number; active: boolean }
