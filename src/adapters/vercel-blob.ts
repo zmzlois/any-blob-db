@@ -31,7 +31,23 @@ export function createVercelBlobAdapter(
       return { text, etag: result.blob.etag || null }
     },
 
-    async write(pathname, body, etag) {
+    async create(pathname, body) {
+      const { put, BlobPreconditionFailedError } = await loadBlob()
+      try {
+        await put(pathname, body, {
+          access: config.access ?? "public",
+          token: config.token,
+          contentType: "application/json",
+          addRandomSuffix: false,
+          cacheControlMaxAge: 0,
+        })
+      } catch (e: unknown) {
+        if (e instanceof BlobPreconditionFailedError) throw conflictError()
+        throw e
+      }
+    },
+
+    async update(pathname, body, etag) {
       const { put, BlobPreconditionFailedError } = await loadBlob()
       try {
         await put(pathname, body, {
@@ -50,7 +66,6 @@ export function createVercelBlobAdapter(
       }
     },
 
-   
     async delete(pathname) {
       const { del } = await loadBlob()
       await del(pathname, { token: config.token })
