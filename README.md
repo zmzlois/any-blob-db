@@ -1,4 +1,4 @@
-# vercel-blob-db
+# blob-as-db
 
 [![npm version](https://img.shields.io/npm/v/vercel-blob-db)](https://www.npmjs.com/package/vercel-blob-db)
 [![npm downloads](https://img.shields.io/npm/dm/vercel-blob-db)](https://www.npmjs.com/package/vercel-blob-db)
@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![peer: @vercel/blob](https://img.shields.io/badge/peer-%40vercel%2Fblob%20v2%2B-black)](https://vercel.com/docs/storage/vercel-blob)
 
-A lightweight database on top of [Vercel Blob](https://vercel.com/docs/storage/vercel-blob), with a [drizzle](https://orm.drizzle.team/)-inspired query API. No SQL, no migrations, no extra infrastructure — just your blob store.
+A lightweight database on top of [Vercel Blob](https://vercel.com/docs/storage/vercel-blob) or [Cloudflare R2](https://developers.cloudflare.com/r2/), with a [drizzle](https://orm.drizzle.team/)-inspired query API. No SQL, no migrations, no extra infrastructure — just your blob store.
 
 > **Not a replacement for** Postgres, PlanetScale, or any real database — every query reads and writes a JSON file.
 
@@ -15,8 +15,12 @@ A lightweight database on top of [Vercel Blob](https://vercel.com/docs/storage/v
 ## install
 
 ```bash
-npm install vercel-blob-db @vercel/blob
+npm install vercel-blob-db @vercel/blob   # vercel blob (default adapter)
+npm install vercel-blob-db                # cloudflare r2 via workers binding — no extra deps
+npm install vercel-blob-db aws4fetch      # cloudflare r2 / s3 over http from anywhere
 ```
+
+Only the peer dependency for the adapter you use needs to be installed — the others are never loaded.
 
 ## setup
 
@@ -29,6 +33,57 @@ const db = createDb({
   access: "private",                          // "public" | "private" (default: "public")
   maxRetries: 3,                              // retries on write conflicts (default: 3)
 })
+```
+
+## adapters
+
+The query API is identical on every backend — pick a storage adapter drizzle-style with the `adapter` field. Omitting it defaults to `"vercel-blob"`, so existing code keeps working unchanged.
+
+### cloudflare r2 (workers binding)
+
+Zero extra dependencies. Use inside Cloudflare Workers or Pages Functions with an [R2 bucket binding](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/):
+
+```ts
+// wrangler.toml: [[r2_buckets]] binding = "MY_BUCKET", bucket_name = "my-db"
+const db = createDb({
+  adapter: "r2",
+  bucket: env.MY_BUCKET,
+  prefix: "my-app",
+})
+```
+
+Full runnable worker with a CRUD endpoint: [`examples/worker`](examples/worker).
+
+### cloudflare r2 / any s3-compatible store (http)
+
+Works from any runtime (Node, edge, workers) using R2's [S3-compatible API](https://developers.cloudflare.com/r2/api/s3/api/). Needs the tiny (~2.5kB) [`aws4fetch`](https://github.com/mhart/aws4fetch) peer dependency for request signing:
+
+```ts
+const db = createDb({
+  adapter: "s3",
+  accountId: process.env.R2_ACCOUNT_ID!,      // endpoint derived: https://<id>.r2.cloudflarestorage.com
+  bucket: "my-db",
+  accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  prefix: "my-app",
+})
+```
+
+For AWS S3, MinIO, or any other S3-compatible store, pass `endpoint` (and optionally `region`) instead of `accountId`. Runnable example against R2: [`examples/r2.ts`](examples/r2.ts).
+
+### bring your own
+
+Implement the two-method `StorageAdapter` interface for anything else:
+
+```ts
+import type { StorageAdapter } from "vercel-blob-db"
+
+const myStorage: StorageAdapter = {
+  async read(pathname) { /* return { text, etag } */ },
+  async write(pathname, body, etag) { /* throw { status: 412 } on etag mismatch */ },
+}
+
+const db = createDb({ adapter: "custom", storage: myStorage })
 ```
 
 ---
@@ -221,9 +276,9 @@ type NewUser = InsertRow<typeof users._schema>
 
 ## how it works
 
-Each table is stored as a single JSON blob at `<prefix>/<table-name>.json`. Reads fetch the file, parse it, filter/transform in memory, and writes upload the updated JSON back. Concurrent writes use `If-Match` / ETag headers to detect conflicts and retry automatically.
+Each table is stored as a single JSON blob at `<prefix>/<table-name>.json`. Reads fetch the file, parse it, filter/transform in memory, and writes upload the updated JSON back. Concurrent writes use ETag conditional writes to detect conflicts and retry automatically — `If-Match` on Vercel Blob and the S3 API, `onlyIf: { etagMatches }` on the R2 binding (R2 [supports these natively](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)).
 
-This means every query is an HTTP round-trip to Vercel Blob. Keep tables small (hundreds to low thousands of rows) and avoid high-frequency concurrent writes.
+This means every query is a round-trip to your blob store. Keep tables small (hundreds to low thousands of rows) and avoid high-frequency concurrent writes.
 
 ---
 
