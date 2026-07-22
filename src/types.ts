@@ -69,7 +69,6 @@ export type TableDef<S extends TableSchema> = {
   _schema: S
 } & { [K in keyof S]: S[K] }
 
-.
 export interface StorageAdapter {
   read(pathname: string): Promise<{ text: string | null; etag: string | null }>
   create(pathname: string, body: string): Promise<void>

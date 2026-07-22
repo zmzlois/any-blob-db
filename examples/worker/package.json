@@ -1,5 +1,5 @@
 {
-  "name": "blob-db-r2-example",
+  "name": "anyblob-r2-example",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
@@ -7,7 +7,7 @@
     "check": "tsc --noEmit && wrangler deploy --dry-run --outdir dist"
   },
   "dependencies": {
-    "blob-db": "workspace:*"
+    "anyblob": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250705.0",

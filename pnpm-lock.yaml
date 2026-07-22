@@ -32,7 +32,7 @@ importers:
 
   examples/worker:
     dependencies:
-      blob-db:
+      anyblob:
         specifier: workspace:*
         version: link:../..
     devDependencies:

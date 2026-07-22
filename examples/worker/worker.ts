@@ -5,8 +5,8 @@
 // workspace:*, so build the library once from the repo root first:
 //
 //   pnpm install && pnpm build
-//   pnpm --filter blob-db-r2-example exec wrangler r2 bucket create my-db
-//   pnpm --filter blob-db-r2-example dev
+//   pnpm --filter anyblob-r2-example exec wrangler r2 bucket create my-db
+//   pnpm --filter anyblob-r2-example dev
 //
 // full crud surface:
 //   curl -X POST localhost:8787/users -d '{"name":"Alice","email":"a@test.com","age":30}'
@@ -17,8 +17,8 @@
 //   curl -X DELETE localhost:8787/users/<id>
 //   curl -X DELETE localhost:8787/users
 import { WorkerEntrypoint } from "cloudflare:workers"
-import type { InferRow, InsertRow, R2BucketLike } from "blob-db"
-import { col, createDb, defineTable, eq } from "blob-db"
+import type { InferRow, InsertRow, R2BucketLike } from "anyblob"
+import { col, createDb, defineTable, eq } from "anyblob"
 
 interface Env {
   DB_BUCKET: R2BucketLike
