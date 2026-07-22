@@ -69,20 +69,14 @@ export type TableDef<S extends TableSchema> = {
   _schema: S
 } & { [K in keyof S]: S[K] }
 
-// the two calls every backend must answer: read a table blob (with its etag)
-// and conditionally write it back. write throws an error with status 412 when
-// the etag no longer matches, which withTable uses to retry.
+.
 export interface StorageAdapter {
   read(pathname: string): Promise<{ text: string | null; etag: string | null }>
-  write(pathname: string, body: string, etag: string | null): Promise<void>
+  create(pathname: string, body: string): Promise<void>
+  update(pathname: string, body: string, etag: string | null): Promise<void>
+  delete?(pathname: string): Promise<void>
 }
 
-// minimal structural types for cloudflare's r2 bucket binding so we don't
-// force @cloudflare/workers-types on every consumer. the real R2Bucket from
-// a worker's env satisfies these shapes. covers the full crud surface used
-// by a typical worker: get (read), put (create/update), delete (delete).
-
-// http metadata r2 stores on each object. set on put, read back on get.
 export interface R2HTTPMetadata {
   contentType?: string
   contentLanguage?: string
@@ -92,11 +86,8 @@ export interface R2HTTPMetadata {
   cacheExpiry?: Date
 }
 
-// user-defined metadata, stored as string key/value pairs.
 export type R2CustomMetadata = Record<string, string>
 
-// conditional headers for get/put — either a Headers object (straight off a
-// request) or the structured form. mirrors how the r2 binding accepts both.
 export interface R2Conditions {
   etagMatches?: string
   etagDoesNotMatch?: string
@@ -111,9 +102,6 @@ export interface R2Range {
   suffix?: number
 }
 
-// object metadata returned by both get and put. the unquoted `etag` is what
-// round-trips into etagMatches; `httpEtag` is quoted and safe for response
-// headers. `writeHttpMetadata` pours stored http metadata into a Headers.
 export interface R2Object {
   etag: string
   httpEtag: string
@@ -124,8 +112,6 @@ export interface R2Object {
   writeHttpMetadata(headers: Headers): void
 }
 
-// object returned by get — same as R2Object plus the body. `body` is a
-// ReadableStream; `text()`/`arrayBuffer()`/`json()` consume it once.
 export interface R2ObjectBody extends R2Object {
   body: ReadableStream
   bodyUsed: boolean
@@ -134,7 +120,6 @@ export interface R2ObjectBody extends R2Object {
   json(): Promise<unknown>
 }
 
-// anything r2's put accepts as a value — streams, buffers, blobs, or null.
 export type R2Value =
   | ReadableStream
   | string
@@ -144,8 +129,6 @@ export type R2Value =
   | null
 
 export interface R2BucketLike {
-  // read — returns null when the key doesn't exist (or when a precondition
-  // in onlyIf fails, in which case `body` is absent on the r2 side).
   get(
     key: string,
     options?: {
@@ -154,8 +137,6 @@ export interface R2BucketLike {
     },
   ): Promise<R2ObjectBody | null>
 
-  // create/update — returns null when an onlyIf precondition fails, which
-  // the r2 adapter treats as a 412 conflict for optimistic locking.
   put(
     key: string,
     value: R2Value,
@@ -166,7 +147,6 @@ export interface R2BucketLike {
     },
   ): Promise<R2Object | null>
 
-  // delete — one key or a batch of keys. resolves once removed.
   delete(key: string | string[]): Promise<void>
 }
 
@@ -175,23 +155,17 @@ interface BaseDbConfig {
   maxRetries?: number
 }
 
-// default adapter — omitting `adapter` keeps existing createDb({ token }) code working
 export interface VercelBlobConfig extends BaseDbConfig {
   adapter?: "vercel-blob"
   token: string
   access?: "public" | "private"
 }
 
-// cloudflare r2 via the workers binding — zero extra dependencies,
-// only usable inside workers/pages where env.MY_BUCKET exists
 export interface R2Config extends BaseDbConfig {
   adapter: "r2"
   bucket: R2BucketLike
 }
 
-// any s3-compatible store over http (cloudflare r2, aws s3, minio, ...).
-// for r2, pass accountId and the endpoint is derived; otherwise pass endpoint.
-// requires the optional aws4fetch peer dependency for request signing.
 export interface S3Config extends BaseDbConfig {
   adapter: "s3"
   bucket: string
@@ -222,7 +196,6 @@ export interface Condition {
   conditions?: Condition[]
 }
 
-// injectable so the transaction can swap in its snapshot-capturing version
 export type WithTableFn = <T>(
   tableName: string,
   transform: (rows: T[]) => T[],
