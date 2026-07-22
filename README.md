@@ -8,7 +8,7 @@
 
 A lightweight database on top of [Vercel Blob](https://vercel.com/docs/storage/vercel-blob) or [Cloudflare R2](https://developers.cloudflare.com/r2/), with a [drizzle](https://orm.drizzle.team/)-inspired query API. No SQL, no migrations, no extra infrastructure — just your blob store. Not sure if you do, I am tired of going to an UI, provision a new database. We already have file storage and quite frankly, A LOT of them. Why not just use them? When we are prototyping, or the I/O traffic is low... why should we pay and spin up database anyways? Swap to drizzle and production postgres/mysql whenever you are ready.
 
-This package turn any storage into a database.
+This package turn any storage into a database. Same interface as drizzle. One line migration.
 
 > **Not a replacement for** Postgres, PlanetScale, or any real database — every query reads and writes a JSON file.
 
