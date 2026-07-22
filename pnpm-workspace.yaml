@@ -1,0 +1,9 @@
+packages:
+  - "examples/worker"
+
+# postinstall scripts pnpm is allowed to run — workerd is wrangler's local
+# runtime, esbuild/sharp are build-time binaries for tsup and wrangler
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - workerd
