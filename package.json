@@ -14,8 +14,7 @@
     }
   },
   "files": [
-    "dist",
-    "public/readme-banner.png"
+    "dist"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
