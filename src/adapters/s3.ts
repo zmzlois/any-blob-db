@@ -69,5 +69,15 @@ export function createS3Adapter(config: S3Config): StorageAdapter {
       if (!res.ok)
         throw new Error(`blob-db: s3 write failed with status ${res.status}`)
     },
+
+    async delete(pathname) {
+      const client = await loadClient()
+      const res = await client.fetch(`${baseUrl}/${encodeKey(pathname)}`, {
+        method: "DELETE",
+      })
+      await res.body?.cancel()
+      if (!res.ok && res.status !== 404)
+        throw new Error(`blob-db: s3 delete failed with status ${res.status}`)
+    },
   }
 }
