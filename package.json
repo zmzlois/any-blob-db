@@ -1,6 +1,6 @@
 {
   "name": "anyblob",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "use vercel blob, s3, or r2 as a lightweight json database with drizzle-inspired syntax",
   "license": "MIT",
   "main": "dist/index.js",
