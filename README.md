@@ -1,5 +1,7 @@
 # AnyBlob
 
+![banner](./public/readme-banner.png)
+
 [![npm version](https://img.shields.io/npm/v/anyblob)](https://www.npmjs.com/package/anyblob)
 [![npm downloads](https://img.shields.io/npm/dm/anyblob)](https://www.npmjs.com/package/anyblob)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-blue)](https://www.typescriptlang.org/)
